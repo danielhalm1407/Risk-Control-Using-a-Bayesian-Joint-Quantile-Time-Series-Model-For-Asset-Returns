@@ -3,6 +3,7 @@ pandas>=2.1
 openpyxl
 numpy>=1.26
 h5py
+XlsxWriter
 
 # Add pkgs required by VS Code
 ipykernel
