@@ -1,0 +1,174 @@
+\documentclass[12pt]{article}
+\usepackage{setspace}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{natbib}
+\usepackage{amsthm}
+\usepackage{times}
+\newcommand{\BibTeX}{{\sc Bib}\TeX}
+\theoremstyle{plain}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{lemma}{Lemma}[section]
+\newtheorem{proposition}{Proposition} [section]
+\newtheorem{corollary}{Corollary} [section]
+\newtheorem{theorem}{Theorem} [section]
+\newtheorem{remark}{Remark} [section]
+\newtheorem{example}{Example} [section]
+\usepackage{hyperref}
+
+\numberwithin{equation}{section}
+
+\setlength{\parindent}{20pt}
+\setlength{\parskip}{5pt}
+\setlength{\textwidth}{6.4in}
+\setlength{\textheight}{8.5in}
+\setlength{\topmargin}{-.25in}
+\setlength{\oddsidemargin}{0in}
+\setlength{\baselineskip}{20pt}
+\renewcommand{\baselinestretch}{1.71}
+
+
+\title{}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+
+
+\begin{table}[h!]
+\begin{center}
+\begin{small}\begin{tabular}{ l c c c }
+\hline\hline
+{}&{LPS}&{LPTS$_{0.01}$}&{LPTS$_{0.05}$}\\
+{$5$} &{}&{}&{}\\
+{$\psi$} \\
+ {BJSAV}&     $1.7005$             &     $5.4627$            &     $4.1998$       \\
+{BJSSV}&     $1.7310$              &     $5.4458$             &     $4.1818$       \\
+{BJGJR}&     $1.7440$              &     $5.2966$             &     $4.0923$        \\
+{BJSAVL}&   $1.7542$              &     ${\bf{5.0770}}$    &     ${\bf{4.0526}}$\\
+{$\psi_t$} \\
+ {BJSAV}&     $1.7071$             &     $5.6768$             &     $4.2509$      \\
+{BJSSV}&     $1.7172$              &     $5.6857$             &     $4.2052$      \\
+{BJGJR}&     $1.7711$              &     $5.9322$             &     $4.3730$      \\
+{BJSAVL}&   $1.7245$              &     $5.3267$             &     $4.0701$      \\\hline
+{$11$} &{}&{}&{}\\
+{$\psi$} \\
+ {BJSAV}&     $1.6863$             &     $5.5413$            &     $4.3453$      \\
+{BJSSV}&      $1.7163$             &      $5.3850$            &     $4.2606$      \\
+{BJGJR}&     $1.7247$              &     $5.2781$             &     $4.2121$      \\
+{BJSAVL}&   $1.7196$              &     $6.0162$             &     $4.4041$      \\
+{$\psi_t$} \\
+ {BJSAV}&     $1.7111$             &     $5.3512$             &     $4.2801$      \\
+{BJSSV}&     $1.7070$             &     $5.4137$             &     $4.2716$      \\
+{BJGJR}&     $1.7165$              &    $5.5051$             &     $4.3655$      \\
+{BJSAVL}&   $1.7140$              &     $5.4028$             &     $4.3366$      \\\hline
+{$21$} &{}&{}&{}\\
+{$\psi$} \\
+ {BJSAV}&     ${\bf{1.6795}}$     &     $5.7431$            &     $4.4185$      \\
+{BJSSV}&      $1.7204$             &     $5.6917$             &     $4.4613$      \\
+{BJGJR}&      $1.7190$             &     $5.3116$             &     $4.2937$      \\
+{BJSAVL}&    $1.7082$              &     $6.0465$             &    $4.4579$      \\
+{$\psi_t$} \\
+ {BJSAV}&     $1.7114$             &     $5.5836$             &     $4.3873$      \\
+{BJSSV}&     $1.7128$             &     $5.5930$             &     $4.3705$      \\
+{BJGJR}&     $1.7093$              &    $5.6022$             &     $4.4199$      \\
+{BJSAVL}&   $1.7107$              &     $5.6178$             &     $4.4185$      \\\hline\hline
+\end{tabular}
+\end{small}
+\caption{IBM: The LPS and LPTS for each model (with bold type used to indicate the best performing model on each criterion).}
+\label{LPTS_IBM}
+\end{center}
+\end{table}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{table}[h!]
+\begin{center}
+\begin{small}\begin{tabular}{ l c c c }
+\hline\hline
+{}&{LPS}&{LPTS$_{0.01}$}&{LPTS$_{0.05}$}\\
+{$5$} &{}&{}&{}\\
+{$\psi$} \\
+ {BJSAV}&    $1.4276$              &     $5.0668$             &     $3.9360$       \\
+{BJSSV}&     $1.4296$              &     $4.9930$             &     $3.9345$       \\
+{BJGJR}&     $1.4195$              &     ${\bf{4.8684}}$             &     ${\bf{3.8921}}$        \\
+{BJSAVL}&   ${\bf{1.4147}}$              &     $5.0242$             &     $3.9175$        \\
+{$\psi_t$} \\
+ {BJSAV}&     $1.4347$             &     $5.7803$             &     $4.3290$      \\
+{BJSSV}&     $1.4487$              &     $6.7157$             &     $4.6917$      \\
+{BJGJR}&     $1.4513$              &     $ 6.3312$            &     $4.5893$      \\
+{BJSAVL}&   $1.4434$              &     $6.4203$             &     $4.6120$      \\\hline
+{$11$} &{}&{}&{}\\
+{$\psi$} \\
+ {BJSAV}&    $1.4265$               &     $5.0352$             &     $3.9868$      \\
+{BJSSV}&     $1.4255$              &     $4.8951$             &     $3.9029$      \\
+{BJGJR}&     $1.4226$              &     $4.8161$             &     $3.9125$      \\
+{BJSAVL}&   $1.4159$              &     $4.9854$             &     $3.9647$      \\
+{$\psi_t$} \\
+ {BJSAV}&     $1.4570$             &     $6.6845$             &     $4.7797$      \\
+{BJSSV}&     $1.4567$              &    $6.7442$             &     $4.7896$      \\
+{BJGJR}&     $1.4495$              &    $6.3354$             &     $4.6716$      \\
+{BJSAVL}&   $1.4478$              &     $6.4700$             &     $4.6680$      \\\hline
+{$21$} &{}&{}&{}\\
+{$\psi$} \\
+ {BJSAV}&     $1.4287$             &     $5.0215$             &     $3.9938$      \\
+{BJSSV}&      $1.4271$             &     $4.9119$             &     $3.9379$      \\
+{BJGJR}&      $1.4245$             &     $4.7393$             &     $3.9113$      \\
+{BJSAVL}&    $1.4203$             &     $4.9457$             &     $4.0111$      \\
+{$\psi_t$} \\
+ {BJSAV}&     $1.4629$             &     $6.8178$             &     $4.8828$      \\
+{BJSSV}&     $1.4598$             &     $6.7289$             &     $4.8536$      \\
+{BJGJR}&     $1.4551$              &    $6.6538$             &     $4.7837$      \\
+{BJSAVL}&   $1.4556$              &     $6.6360$             &     $4.7900$      \\\hline\hline
+\end{tabular}
+\end{small}
+\caption{S\&P$500$: The LPS and LPTS for each model (with bold type used to indicate the best performing model on each criterion).}
+\label{LPTS_SP500}
+\end{center}
+\end{table}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{table}[h!]
+\begin{center}
+\begin{small}\begin{tabular}{ l c c c }
+\hline\hline
+{}&{LPS}&{LPTS$_{0.01}$}&{LPTS$_{0.05}$}\\
+{$5$} &{}&{}&{}\\
+{$\psi$} \\
+ {BJSAV}&    $2.3178$              &     $5.9085$             &     ${\bf{4.5486}}$       \\
+{BJSSV}&     $2.1730$              &     $5.8698$             &     $4.5769$       \\
+{BJGJR}&     $2.2042$              &     $5.8540$             &     $4.5751$        \\
+{BJSAVL}&   $2.2148$              &     $5.9027$             &     $4.5860$        \\
+{$\psi_t$} \\
+ {BJSAV}&     $2.1646$             &     $5.9861$               &     $4.5653$      \\
+{BJSSV}&     $2.2327$              &     $5.7805$               &     $4.5498$      \\
+{BJGJR}&     $2.6008$              &     $6.3282$               &     $5.1876$      \\
+{BJSAVL}&   $2.1691$               &     $6.5720$              &     $4.7662$      \\\hline
+{$11$} &{}&{}&{}\\ 
+{$\psi$} \\
+ {BJSAV}&    $2.1762$               &     $5.8417$            &     $4.5794$      \\
+{BJSSV}&     $2.2372$              &     $5.7986$             &     $4.5741$      \\
+{BJGJR}&     $2.1767$              &     $5.8058$             &     $4.5885$      \\
+{BJSAVL}&   $2.1727$              &     $5.7570$             &     $4.6357$      \\
+{$\psi_t$} \\
+ {BJSAV}&    $2.1628$                 &     $5.8989$             &     $4.6307$      \\
+{BJSSV}&     $2.2203$                 &    $6.0012$              &     $4.7426$      \\
+{BJGJR}&     $2.3475$                 &    $5.7520$              &     $4.6138$      \\
+{BJSAVL}&   ${\bf{2.1625}}$         &     ${\bf{5.7384}}$    &     $4.5496$      \\\hline
+{$21$} &{}&{}&{}\\
+{$\psi$} \\
+ {BJSAV}&     $2.1718$             &     $5.8660$             &     $4.6321$      \\
+{BJSSV}&      $ 2.1948$            &     $5.8154$             &     $4.6300$      \\
+{BJGJR}&      $2.1656$             &     $5.8299$             &     $4.6356$      \\
+{BJSAVL}&    $2.1675$             &     $5.8184$             &     $4.6032$      \\
+{$\psi_t$} \\
+ {BJSAV}&     $2.1699$             &     $6.0763$             &     $4.8051$      \\
+{BJSSV}&     $2.1758$              &     $5.8871$             &     $4.7011$      \\
+{BJGJR}&     $2.1745$              &    $6.3533$              &     $4.8694$      \\
+{BJSAVL}&   $2.1656$              &     $5.7849$             &     $4.6254$      \\\hline\hline
+\end{tabular}
+\end{small}
+\caption{COIL: The LPS and LPTS for each model (with bold type used to indicate the best performing model on each criterion).}
+\label{LPTS_COIL}
+\end{center}
+\end{table}
+\end{document}

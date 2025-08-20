@@ -209,4 +209,6 @@ __marimo__/
 # ignore certain files and folders
 data/
 *credentials*
-*scripts*
+
+# Ignore large files that are not needed in the repository
+*.mat*
