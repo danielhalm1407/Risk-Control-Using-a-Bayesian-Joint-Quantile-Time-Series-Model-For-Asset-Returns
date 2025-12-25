@@ -4,7 +4,7 @@
 pwd
 
 % go to the correct directory
-% cd('scripts/Archive');
+cd('scripts/Archive');
 
 % load in the s&p500 returns data in the sp500_interday_returns.xlsx file
 data = readtimetable('sp500_interday_returns.xlsx');
