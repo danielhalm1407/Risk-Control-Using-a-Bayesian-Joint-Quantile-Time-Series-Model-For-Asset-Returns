@@ -23,6 +23,7 @@ nbformat>=4.2.0
 streamlit
 dash
 plotnine
+dash plotly pandas
 
 # SQL
 jupysql>=0.10.4
