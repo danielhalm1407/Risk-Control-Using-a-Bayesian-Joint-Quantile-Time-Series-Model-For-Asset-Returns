@@ -2,13 +2,14 @@
 
 % check the current working directory
 pwd
+%%
 
 % go to the correct directory
-cd('scripts/Archive');
+cd('data/intermediate_input');
+%%
 
 % load in the s&p500 returns data in the sp500_interday_returns.xlsx file
-data = readtimetable('sp500_interday_returns.xlsx');
-
+data = readtimetable('spx_intraday_returns.xlsx');
 
 
 %% Set parameters for the MCMC
@@ -40,7 +41,12 @@ size(ret_SP500)
 class(ret_SP500)
 
 % Fit the model only on the first 10 years of data (2520 trading days)
-end_idx = 2520; % 10 years of trading days
+% end_idx = 2520; % 10 years of trading days
+
+% Fit the model on the firt 60% of observations
+end_idx = floor(0.6 * size(ret_SP500, 1));
+fprintf('End index for training data: %d\n', end_idx);
+fprintf('Total number of observations: %d\n', size(ret_SP500, 1));
 
 %% Previously sepearated training data outside of the MH function
 training_data = ret_SP500(1:end_idx, :);
@@ -68,6 +74,13 @@ size(y)
 %                               11
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%
+% change directory to the scripts/BJQTS_code folder
+cd('../../scripts/BJQTS_code');
+
+%%
+pwd
 %% BJSAV 
 % start a count of how long this takes
 tic
@@ -89,7 +102,7 @@ tic
     holdtheta_minus_forecast_BJSAV_5_norm_SP500, holdtheta_plus_forecast_BJSAV_5_norm_SP500] = ...
     MHRWIK_PT_forecasts(ret_SP500, alpha_minus, alpha_plus, ...
  numberofits, burnin, every, 1, exp(linspace(0, -0.1, 3)), end_idx);
-save BJSAV_5_norm_SP500.mat -v7.3 
+save('../../data/output/BJSAV_5_norm_SP500.mat', '-v7.3')
 % stop the timer and display the time taken
 toc
 
@@ -215,7 +228,7 @@ plot(q_forecasts)
 
 %%
 % Save Out the Forecast Quantiles to a .mat file
-save('../../data/q_minus_BJSAV_5_norm_SP500.mat', 'q_forecasts');
+save('../../data/intermediate_input/q_minus_BJSAV_5_norm_SP500.mat', 'q_forecasts');
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
