@@ -1,127 +1,229 @@
-# A Script to create a Dash app for visualizing level time series data
+# dash_timeseries_app.py
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Mapping, Sequence, Optional
 
 import numpy as np
 from dash import Dash, html, dcc, Input, Output
 import plotly.graph_objects as go
 
-def make_level_app(
-    df, # input dataframe with 'time' and series columns
-    reindex = True, # whether to reindex the levels to 100 at the start of the selected range
-    cols_of_interest = None, # columns (series) to plot
-    label_map = { # default labels
-    'spx_level_yf': 'S&P 500 Index<br>Level YF',
-    'es_level_yf': 'ES Futures<br>Settlement YF',
-    'spx_level': 'S&P 500 Index<br>Level CIQ',
-    'spx_period_return': 'S&P 500 Index<br>Return CIQ',
-    'spy_period_return': 'SPY ETF<br>Return CIQ',
-    },
-    colour_map = { # default colors
-    'spx_level_yf': 'purple',
-    'es_level_yf': 'blue',
-    'spx_level': 'cyan'
-    },
-    title="Comparison of Levels",
-    figure_title="Levels Reindexed to 100",
-    graph_id="level-plot",
-    slider_id="time-range-slider",
-    num_marks=20,
-    fig_height=800,          # height control
-    port=8050
-):
-    app = Dash(__name__)
 
-    mark_positions = np.linspace(0, len(df) - 1, num_marks, dtype=int)
+DEFAULT_LABEL_MAP = {
+    "spx_level_yf": "S&P 500 Index<br>Level YF",
+    "es_level_yf": "ES Futures<br>Settlement YF",
+    "spx_level": "S&P 500 Index<br>Level CIQ",
+    "spx_period_return": "S&P 500 Index<br>Return CIQ",
+    "spy_period_return": "SPY ETF<br>Return CIQ",
+}
 
-    app.layout = html.Div([
-        html.H3(title),
-        # leave spacing before the range slider
-        html.Br(), html.Br(), html.Br(), html.Br(),
+DEFAULT_COLOUR_MAP = {
+    "spx_level_yf": "purple",
+    "es_level_yf": "blue",
+    "spx_level": "cyan",
+}
 
-        dcc.RangeSlider(
-            id=slider_id,
-            min=0,
-            max=len(df) - 1,
-            marks={
-                int(pos): {
-                    "label": df["time"].iloc[pos].strftime("%y-%m-%d %H:%M"),
-                    "style": {
-                        "transform": "rotate(-90deg)",
-                        "transformOrigin": "top left",
-                        "whiteSpace": "nowrap",
-                        "textAlign": "center",
-                        "marginTop": "-20px",
-                        "marginLeft": "-8px",
+
+@dataclass(frozen=True)
+class LevelAppConfig:
+    reindex: bool = True
+    cols_of_interest: Optional[Sequence[str]] = None
+    label_map: Mapping[str, str] = None  # filled in by normalize_config
+    colour_map: Mapping[str, str] = None  # filled in by normalize_config
+    title: str = "Comparison of Levels"
+    figure_title: str = "Levels Reindexed to 100"
+    graph_id: str = "level-plot"
+    slider_id: str = "time-range-slider"
+    num_marks: int = 20
+    fig_height: int = 800
+    port: int = 8050
+    close_hour: int = 15
+    close_minute: int = 50
+
+
+def _normalize_config(cfg: LevelAppConfig) -> LevelAppConfig:
+    # Avoid mutable defaults and allow user override while keeping sane defaults
+    label_map = DEFAULT_LABEL_MAP if cfg.label_map is None else cfg.label_map
+    colour_map = DEFAULT_COLOUR_MAP if cfg.colour_map is None else cfg.colour_map
+    return LevelAppConfig(**{**cfg.__dict__, "label_map": label_map, "colour_map": colour_map})
+
+
+def _validate_inputs(df, cfg: LevelAppConfig) -> None:
+    if "time" not in df.columns:
+        raise ValueError("df must contain a 'time' column.")
+    if not np.issubdtype(df["time"].dtype, np.datetime64):
+        # Works for pandas datetime64; if timezone-aware, dtype may differ slightly.
+        # A more permissive check would be: pandas.api.types.is_datetime64_any_dtype
+        raise ValueError("df['time'] must be datetime-like (convert via pd.to_datetime).")
+
+    if len(df) < 2:
+        raise ValueError("df must have at least 2 rows for slider/plotting.")
+
+    if cfg.cols_of_interest is None or len(cfg.cols_of_interest) == 0:
+        raise ValueError("cols_of_interest must be provided (non-empty).")
+
+    missing = [c for c in cfg.cols_of_interest if c not in df.columns]
+    if missing:
+        raise ValueError(f"These cols_of_interest are missing from df: {missing}")
+
+
+class LevelDashApp:
+    """
+    Stateful builder for a Dash app.
+
+    - __init__: store df + config as attributes (self.df, self.cfg, ...)
+    - build(): create Dash app, layout, callbacks
+    - _update_plot(): callback method that uses attributes
+    """
+
+    def __init__(self, df, config: LevelAppConfig):
+        self.df = df
+        self.cfg = self._normalize_config(config)
+        self._validate_inputs()
+
+        # These get filled when you build the app
+        self.app: Optional[Dash] = None
+
+    def _normalize_config(self, cfg: LevelAppConfig) -> LevelAppConfig:
+        label_map = DEFAULT_LABEL_MAP if cfg.label_map is None else cfg.label_map
+        colour_map = DEFAULT_COLOUR_MAP if cfg.colour_map is None else cfg.colour_map
+        return LevelAppConfig(**{**cfg.__dict__, "label_map": label_map, "colour_map": colour_map})
+
+    def _validate_inputs(self) -> None:
+        df = self.df
+        cfg = self.cfg
+
+        if "time" not in df.columns:
+            raise ValueError("df must contain a 'time' column.")
+        # If you use pandas, this check can be improved with pandas.api.types
+        if not np.issubdtype(df["time"].dtype, np.datetime64):
+            raise ValueError("df['time'] must be datetime-like (convert via pd.to_datetime).")
+        if len(df) < 2:
+            raise ValueError("df must have at least 2 rows.")
+        if cfg.cols_of_interest is None or len(cfg.cols_of_interest) == 0:
+            raise ValueError("cols_of_interest must be provided (non-empty).")
+
+        missing = [c for c in cfg.cols_of_interest if c not in df.columns]
+        if missing:
+            raise ValueError(f"These cols_of_interest are missing from df: {missing}")
+
+    def build(self) -> Dash:
+        """Create the Dash app, attach layout + callbacks, return the Dash app."""
+        cfg = self.cfg
+        df = self.df
+
+        app = Dash(__name__)
+        self.app = app
+
+        mark_positions = np.linspace(0, len(df) - 1, cfg.num_marks, dtype=int)
+
+        app.layout = html.Div(
+            [
+                html.H3(cfg.title),
+                html.Br(), html.Br(), html.Br(), html.Br(),
+                dcc.RangeSlider(
+                    id=cfg.slider_id,
+                    min=0,
+                    max=len(df) - 1,
+                    marks={
+                        int(pos): {
+                            "label": df["time"].iloc[pos].strftime("%y-%m-%d %H:%M"),
+                            "style": {
+                                "transform": "rotate(-90deg)",
+                                "transformOrigin": "top left",
+                                "whiteSpace": "nowrap",
+                                "textAlign": "center",
+                                "marginTop": "-20px",
+                                "marginLeft": "-8px",
+                            },
+                        }
+                        for pos in mark_positions
                     },
-                }
-                for pos in mark_positions
-            },
-            value=[0, len(df) - 1],
-            tooltip={"placement": "bottom", "always_visible": True},
-        ),
+                    value=[0, len(df) - 1],
+                    tooltip={"placement": "bottom", "always_visible": True},
+                ),
+                html.Br(),
+                dcc.Graph(id=cfg.graph_id, style={"height": f"{cfg.fig_height}px"}),
+            ]
+        )
 
-        html.Br(),
+        # Callback defined inside build, but calls a method that uses self.df/self.cfg
+        @app.callback(Output(cfg.graph_id, "figure"), Input(cfg.slider_id, "value"))
+        def _callback(time_range):
+            return self._update_plot(time_range)
 
-        dcc.Graph(id=graph_id, style={"height": f"{fig_height}px"})
-    ])
+        return app
 
-    @app.callback(
-        Output(graph_id, "figure"),
-        Input(slider_id, "value")
-    )
-    def update_plot(time_range):
+    def _update_plot(self, time_range):
+        cfg = self.cfg
+        df = self.df
+
         start_idx, end_idx = time_range
         filtered_df = df.iloc[start_idx:end_idx + 1].copy()
+        if len(filtered_df) == 0:
+            return go.Figure()
 
         tick_positions = np.linspace(0, len(filtered_df) - 1, 20, dtype=int)
 
         fig = go.Figure()
+        y_axis_title_value = "Level"
 
-        # plot each data series iteratively
-        for col in cols_of_interest:
+        for col in cfg.cols_of_interest:
+            series = filtered_df[col]
+            first_value = series.iloc[0]
 
-            var_data = filtered_df[col]
-            first_value = var_data.iloc[0]
-            # normalize if required
-            if reindex:
-                normalized = (var_data / first_value) * 100
+            if cfg.reindex:
+                y = (series / first_value) * 100
                 y_axis_title_value = "Level (Base 100)"
             else:
-                normalized = var_data
-                y_axis_title_value = "Level"
+                y = series
 
-            fig.add_trace(go.Scatter(
-                x=filtered_df.index,
-                y=normalized,
-                mode="lines",
-                name=label_map.get(col, col),
-                line=dict(width=2, color=colour_map.get(col))
-            ))
-        # mark vertical lines at market close times (15:50)
-        close_times = filtered_df[
-            (filtered_df["time"].dt.hour == 15) &
-            (filtered_df["time"].dt.minute == 50)
-        ]
-        for idx, row in close_times.iterrows():
-            fig.add_vline(
-                x=idx,
-                line=dict(color="grey", dash="dash", width=1),
-                opacity=0.5
+            fig.add_trace(
+                go.Scatter(
+                    x=filtered_df.index,
+                    y=y,
+                    mode="lines",
+                    name=cfg.label_map.get(col, col),
+                    line=dict(width=2, color=cfg.colour_map.get(col)),
+                )
             )
 
-        # add extra layout details
+        close_times = filtered_df[
+            (filtered_df["time"].dt.hour == cfg.close_hour) &
+            (filtered_df["time"].dt.minute == cfg.close_minute)
+        ]
+        for idx in close_times.index:
+            fig.add_vline(x=idx, line=dict(color="grey", dash="dash", width=1), opacity=0.5)
+
         fig.update_layout(
-            title=figure_title,
+            title=cfg.figure_title,
             xaxis_title="Time",
             yaxis_title=y_axis_title_value,
             hovermode="x unified",
-            height=fig_height,  # adjust the figure height
+            height=cfg.fig_height,
             xaxis=dict(
                 tickmode="array",
                 tickvals=[filtered_df.index[i] for i in tick_positions],
                 ticktext=[filtered_df["time"].iloc[i].strftime("%y-%m-%d %H:%M") for i in tick_positions],
-                tickangle=-90
-            )
+                tickangle=-90,
+            ),
         )
         return fig
 
-    return app
+    def run(self, *, debug: bool = True, port: Optional[int] = None) -> None:
+        """Convenience run method."""
+        if self.app is None:
+            # safely build the app if not already done before running
+            self.build()
+        self.app.run(debug=debug, port=(self.cfg.port if port is None else port))
+
+
+
+# Optional: allow running this file directly as a script for quick manual testing
+if __name__ == "__main__":
+    # Put a tiny demo here if you want, but DON'T rely on notebook variables.
+    # Example: load a CSV, create df, then:
+    # cfg = LevelAppConfig(cols_of_interest=[...], reindex=False)
+    # app = make_level_app(df, cfg)
+    # run_app(app, debug=True, port=8050)
+    pass
