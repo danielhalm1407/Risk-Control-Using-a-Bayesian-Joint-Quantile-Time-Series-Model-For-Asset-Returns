@@ -13,7 +13,7 @@ def make_level_app(
     'es_level_yf': 'ES Futures<br>Settlement YF',
     'spx_level': 'S&P 500 Index<br>Level CIQ',
     'spx_period_return': 'S&P 500 Index<br>Return CIQ',
-    'spy_period_return': 'S&P 500 ETF<br>Return CIQ',
+    'spy_period_return': 'SPY ETF<br>Return CIQ',
     },
     colour_map = { # default colors
     'spx_level_yf': 'purple',
