@@ -11,7 +11,9 @@ import plotly.graph_objects as go
 
 DEFAULT_LABEL_MAP = {
     "spx_level_yf": "S&P 500 Index<br>Level YF",
+    "spx_period_return_yf": "S&P 500 Index<br>Return YF",
     "es_level_yf": "ES Futures<br>Settlement YF",
+    "es_period_return_yf": "ES Futures<br>Return YF",
     "spx_level": "S&P 500 Index<br>Level CIQ",
     "spx_period_return": "S&P 500 Index<br>Return CIQ",
     "spy_period_return": "SPY ETF<br>Return CIQ",

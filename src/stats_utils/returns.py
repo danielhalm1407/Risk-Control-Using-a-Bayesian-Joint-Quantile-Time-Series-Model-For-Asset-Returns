@@ -40,7 +40,7 @@ class ReturnsConfig:
     period_suffix: str = "_period_return"
     total_suffix: str = "_total_return"
     return_kind: ReturnKind = "log"
-    inplace: bool = False
+    inplace: bool = False # control whether to modify input df or return a copy
     start_index: int = 1
 
 
@@ -55,16 +55,23 @@ class ReturnsCalculator:
     """
 
     def __init__(self, config: Optional[ReturnsConfig] = None):
+        """
+        Initialize the ReturnsCalculator class with given configuration.
+        """
         self.cfg = config or ReturnsConfig()
 
     def select_level_cols(self, df: pd.DataFrame, cols: Optional[Sequence[str]] = None) -> List[str]:
-        """Pick which columns to treat as level series."""
+        """
+        Pick which columns to treat as level series., and outputs them
+        """
         if cols is not None:
             missing = [c for c in cols if c not in df.columns]
             if missing:
+                # detect if one of the columns in the user-provided list is missing from df
                 raise ValueError(f"Requested cols not in df: {missing}")
             return list(cols)
-
+        # if no columns given, automatically select all columns containing the level substring
+        # (self.config.level_contains is usually just "level", so this just checks if "level" is in the column name)
         return [c for c in df.columns if self.cfg.level_contains in c]
 
     def _validate(self, df: pd.DataFrame, level_cols: Sequence[str]) -> None:
