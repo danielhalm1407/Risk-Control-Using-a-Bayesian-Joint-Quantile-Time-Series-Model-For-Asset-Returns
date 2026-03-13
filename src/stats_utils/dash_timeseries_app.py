@@ -306,7 +306,8 @@ class LevelDashApp:
                 y_axis_title_value = "Level (Base 100)"
             else:
                 y = series
-
+                
+            # Main active ingredient: the plot  
             fig.add_trace(
                 go.Scatter(
                     x=filtered_df.index,
@@ -324,6 +325,8 @@ class LevelDashApp:
         for idx in close_times.index:
             fig.add_vline(x=idx, line=dict(color="grey", dash="dash", width=1), opacity=0.5)
 
+
+              
         fig.update_layout(
             title=cfg.figure_title,
             xaxis_title="Time",

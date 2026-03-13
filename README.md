@@ -49,7 +49,8 @@ I have used Open AI's Chat GPT 3.5, GPT 4-0 and GPT 5, as well as github co-pilo
 │       ├── contains figures and images
 │   └── index.html (Project overview web page)
 ├── notebooks
-│   ├── NB01_Backtest_Interday.ipynb (Main notebook with visuals)
+│   ├── NB01_Backtest_Interday.ipynb (Original main notebook with visuals)
+│   ├── NB01_Backtest_Interday_working.ipynb (Additional, inter-day analysis building off of original, main notebook)
 │   └── NB01_Backtest_Intraday.ipynb (Work in progress for applying into the intra-day space)
 ├── src
 │   ├── stats_utils (custom Python package)
