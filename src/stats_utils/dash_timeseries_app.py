@@ -1,12 +1,19 @@
 # dash_timeseries_app.py
-from __future__ import annotations
 
+# imports
+
+from __future__ import annotations
 from dataclasses import dataclass
+from dash import Dash, html, dcc, Input, Output
+
+
+import plotly.graph_objects as go
+
+import matplotlib.colors as mcolors
+import numpy as np
 from typing import Mapping, Sequence, Optional
 
-import numpy as np
-from dash import Dash, html, dcc, Input, Output
-import plotly.graph_objects as go
+
 
 
 DEFAULT_LABEL_MAP = {
@@ -30,8 +37,22 @@ DEFAULT_COLOUR_MAP = {
 class LevelAppConfig:
     reindex: bool = True
     cols_of_interest: Optional[Sequence[str]] = None
+
+    # allow user to input pre-made label map, generate automatically, or 
+    # stick with defaults (if enters none)
     label_map: Mapping[str, str] = None  # filled in by normalize_config
+    auto_label_map: bool = True
+    
+    # allow user to input pre-made colour map, generate automatically, or 
+    # stick with defaults (if enters none)
     colour_map: Mapping[str, str] = None  # filled in by normalize_config
+    auto_colour_map: bool = True
+    colour_start: str = "cyan"
+    colour_end: str = "purple"
+
+    
+
+    # default UI settings
     title: str = "Comparison of Levels"
     figure_title: str = "Levels Reindexed to 100"
     graph_id: str = "level-plot"
@@ -42,11 +63,121 @@ class LevelAppConfig:
     close_hour: int = 15
     close_minute: int = 50
 
+class AutoLabelMap:
+    """
+    Create a dict mapping column names -> labels
+    """
+
+    def __init__(self, cols, start="cyan", end="purple", name="gradient"):
+        self.cols = list(cols)
+
+        # filled by run()
+        self.label_map = None
+
+    def run(self):
+        # for each column of interest, create a label by replacing underscores 
+        # with spaces, titleizing words, and putting a line break at most every 16 
+        # characters, if not, right at the last space before 16 chars
+        label_map = {}
+        for col in self.cols:
+            words = col.replace("_", " ").title().split(" ")
+            label = ""
+            current_line = ""
+            for word in words:
+                if len(current_line) + len(word) + 1 <= 16:
+                    if current_line:
+                        current_line += " " + word
+                    else:
+                        current_line = word
+                else:
+                    if label:
+                        label += "<br>" + current_line
+                    else:
+                        label = current_line
+                    current_line = word
+            if current_line:
+                if label:
+                    label += "<br>" + current_line
+                else:
+                    label = current_line
+            label_map[col] = label
+        
+        self.label_map = label_map
+        return self.label_map
+
+class GradientColourMap:
+    """
+    Create a dict mapping column names -> hex colours using a linear gradient.
+
+    Usage:
+        gen = GradientColourMap(cols, start="cyan", end="purple")
+        gen.run()
+        colour_map = gen.colour_map
+    """
+
+    def __init__(self, cols, start="cyan", end="purple", name="gradient"):
+        self.cols = list(cols)
+        self.start = start
+        self.end = end
+        self.name = name
+
+        # filled by run()
+        self.colour_map = None
+
+    def run(self):
+        n = len(self.cols)
+        if n == 0:
+            self.colour_map = {}
+            return self.colour_map
+
+        cmap = mcolors.LinearSegmentedColormap.from_list(self.name, [self.start, self.end])
+        positions = np.linspace(0, 1, n)
+        colours = [mcolors.to_hex(cmap(p)) for p in positions]
+
+        self.colour_map = dict(zip(self.cols, colours))
+        return self.colour_map
+
+
+
+
 
 def _normalize_config(cfg: LevelAppConfig) -> LevelAppConfig:
     # Avoid mutable defaults and allow user override while keeping sane defaults
-    label_map = DEFAULT_LABEL_MAP if cfg.label_map is None else cfg.label_map
-    colour_map = DEFAULT_COLOUR_MAP if cfg.colour_map is None else cfg.colour_map
+    # take user input label map if provided
+    if cfg.label_map is not None:
+        label_map = cfg.label_map
+    # if no label_map is explicitly provided...
+    else:
+        # if user want it to be auto-generated, do so
+        if cfg.auto_label_map and cfg.cols_of_interest:
+            label_map = AutoLabelMap(
+                cfg.cols_of_interest
+            ).run()
+        # else, stick with defaults
+        else:
+            label_map = DEFAULT_LABEL_MAP
+
+    # take user input colour map if provided
+    if cfg.colour_map is not None:
+        colour_map = cfg.colour_map
+    # if no colour_map is explicitly provided...
+    else:
+        # if user want it to be auto-generated, do so
+        if cfg.auto_colour_map and cfg.cols_of_interest:
+            colour_map = GradientColourMap(
+                cfg.cols_of_interest,
+                start=cfg.colour_start,
+                end=cfg.colour_end,
+                name="auto_gradient",
+            ).run()
+        # else, stick with defaults
+        else:
+            colour_map = DEFAULT_COLOUR_MAP
+    # return new config with updated maps
+    # the **{ **... } syntax unpacks the original config's fields
+        # where the first ** unpacks the dict,
+        # and the second ** allows us to override specific fields
+    # note that the __dict__ attribute of a dataclass instance gives a dict of its fields
     return LevelAppConfig(**{**cfg.__dict__, "label_map": label_map, "colour_map": colour_map})
 
 
@@ -80,16 +211,12 @@ class LevelDashApp:
 
     def __init__(self, df, config: LevelAppConfig):
         self.df = df
-        self.cfg = self._normalize_config(config)
+        self.cfg = _normalize_config(config)
         self._validate_inputs()
 
         # These get filled when you build the app
         self.app: Optional[Dash] = None
 
-    def _normalize_config(self, cfg: LevelAppConfig) -> LevelAppConfig:
-        label_map = DEFAULT_LABEL_MAP if cfg.label_map is None else cfg.label_map
-        colour_map = DEFAULT_COLOUR_MAP if cfg.colour_map is None else cfg.colour_map
-        return LevelAppConfig(**{**cfg.__dict__, "label_map": label_map, "colour_map": colour_map})
 
     def _validate_inputs(self) -> None:
         df = self.df
@@ -212,13 +339,16 @@ class LevelDashApp:
         )
         return fig
 
-    def run(self, *, debug: bool = True, port: Optional[int] = None) -> None:
-        """Convenience run method."""
+    # safely build the app if not already done before running
+            
+    def run(self, *, debug: bool = False, port: Optional[int] = None, use_reloader: bool = False) -> None:
         if self.app is None:
-            # safely build the app if not already done before running
             self.build()
-        self.app.run(debug=debug, port=(self.cfg.port if port is None else port))
-
+        self.app.run(
+            debug=debug,
+            port=(self.cfg.port if port is None else port),
+            use_reloader=use_reloader,
+        )
 
 
 # Optional: allow running this file directly as a script for quick manual testing
