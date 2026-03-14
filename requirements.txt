@@ -5,6 +5,8 @@ numpy>=1.26
 h5py
 XlsxWriter
 
+
+
 # Add pkgs required by VS Code
 ipykernel
 
@@ -24,6 +26,7 @@ streamlit
 dash
 plotnine
 dash plotly pandas
+kaleido
 
 # SQL
 jupysql>=0.10.4
@@ -37,3 +40,6 @@ scipy
 
 # Decoding/Reading in Files
 unidecode
+
+# Custom packages
+-e .

@@ -10,3 +10,6 @@ dependencies = []
 
 [tool.setuptools.packages.find]
 where = ["src"]
+# Optional: uncomment these to package only `stats_utils` and exclude `scripts`.
+# include = ["stats_utils", "stats_utils.*"]
+# exclude = ["scripts", "scripts.*"]
