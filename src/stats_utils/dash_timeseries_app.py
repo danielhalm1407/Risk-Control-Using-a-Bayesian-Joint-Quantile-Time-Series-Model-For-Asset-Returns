@@ -4,7 +4,14 @@
 
 from __future__ import annotations
 from dataclasses import dataclass
-from dash import Dash, html, dcc, Input, Output
+try:
+    from dash import Dash, html, dcc, Input, Output
+except ImportError:  # Allow standalone Plotly figure use without Dash installed.
+    Dash = None
+    html = None
+    dcc = None
+    Input = None
+    Output = None
 
 
 import plotly.graph_objects as go
@@ -200,6 +207,65 @@ def _validate_inputs(df, cfg: LevelAppConfig) -> None:
         raise ValueError(f"These cols_of_interest are missing from df: {missing}")
 
 
+def _build_level_figure(df, cfg: LevelAppConfig, time_range=None):
+    if time_range is None:
+        filtered_df = df.copy()
+    else:
+        start_idx, end_idx = time_range
+        filtered_df = df.iloc[start_idx:end_idx + 1].copy()
+
+    if len(filtered_df) == 0:
+        return go.Figure()
+
+    num_ticks = min(20, len(filtered_df))
+    tick_positions = np.linspace(0, len(filtered_df) - 1, num_ticks, dtype=int)
+
+    fig = go.Figure()
+    y_axis_title_value = "Level"
+
+    for col in cfg.cols_of_interest:
+        series = filtered_df[col]
+        first_value = series.iloc[0]
+
+        if cfg.reindex:
+            y = (series / first_value) * 100
+            y_axis_title_value = "Level (Base 100)"
+        else:
+            y = series
+
+        fig.add_trace(
+            go.Scatter(
+                x=filtered_df.index,
+                y=y,
+                mode="lines",
+                name=cfg.label_map.get(col, col),
+                line=dict(width=2, color=cfg.colour_map.get(col)),
+            )
+        )
+
+    close_times = filtered_df[
+        (filtered_df["time"].dt.hour == cfg.close_hour) &
+        (filtered_df["time"].dt.minute == cfg.close_minute)
+    ]
+    for idx in close_times.index:
+        fig.add_vline(x=idx, line=dict(color="grey", dash="dash", width=1), opacity=0.5)
+
+    fig.update_layout(
+        title=cfg.figure_title,
+        xaxis_title="Time",
+        yaxis_title=y_axis_title_value,
+        hovermode="x unified",
+        height=cfg.fig_height,
+        xaxis=dict(
+            tickmode="array",
+            tickvals=[filtered_df.index[i] for i in tick_positions],
+            ticktext=[filtered_df["time"].iloc[i].strftime("%y-%m-%d %H:%M") for i in tick_positions],
+            tickangle=-90,
+        ),
+    )
+    return fig
+
+
 class LevelDashApp:
     """
     Stateful builder for a Dash app.
@@ -238,6 +304,9 @@ class LevelDashApp:
 
     def build(self) -> Dash:
         """Create the Dash app, attach layout + callbacks, return the Dash app."""
+        if Dash is None:
+            raise ImportError("dash is required to build the app. Install it to use LevelDashApp.")
+
         cfg = self.cfg
         df = self.df
 
@@ -284,63 +353,7 @@ class LevelDashApp:
         return app
 
     def _update_plot(self, time_range):
-        cfg = self.cfg
-        df = self.df
-
-        start_idx, end_idx = time_range
-        filtered_df = df.iloc[start_idx:end_idx + 1].copy()
-        if len(filtered_df) == 0:
-            return go.Figure()
-
-        tick_positions = np.linspace(0, len(filtered_df) - 1, 20, dtype=int)
-
-        fig = go.Figure()
-        y_axis_title_value = "Level"
-
-        for col in cfg.cols_of_interest:
-            series = filtered_df[col]
-            first_value = series.iloc[0]
-
-            if cfg.reindex:
-                y = (series / first_value) * 100
-                y_axis_title_value = "Level (Base 100)"
-            else:
-                y = series
-                
-            # Main active ingredient: the plot  
-            fig.add_trace(
-                go.Scatter(
-                    x=filtered_df.index,
-                    y=y,
-                    mode="lines",
-                    name=cfg.label_map.get(col, col),
-                    line=dict(width=2, color=cfg.colour_map.get(col)),
-                )
-            )
-
-        close_times = filtered_df[
-            (filtered_df["time"].dt.hour == cfg.close_hour) &
-            (filtered_df["time"].dt.minute == cfg.close_minute)
-        ]
-        for idx in close_times.index:
-            fig.add_vline(x=idx, line=dict(color="grey", dash="dash", width=1), opacity=0.5)
-
-
-              
-        fig.update_layout(
-            title=cfg.figure_title,
-            xaxis_title="Time",
-            yaxis_title=y_axis_title_value,
-            hovermode="x unified",
-            height=cfg.fig_height,
-            xaxis=dict(
-                tickmode="array",
-                tickvals=[filtered_df.index[i] for i in tick_positions],
-                ticktext=[filtered_df["time"].iloc[i].strftime("%y-%m-%d %H:%M") for i in tick_positions],
-                tickangle=-90,
-            ),
-        )
-        return fig
+        return _build_level_figure(self.df, self.cfg, time_range=time_range)
 
     # safely build the app if not already done before running
             
@@ -362,3 +375,43 @@ if __name__ == "__main__":
     # app = make_level_app(df, cfg)
     # run_app(app, debug=True, port=8050)
     pass
+
+
+
+def make_level_figure(
+    df,
+    cols_of_interest,
+    label_map=None,
+    colour_map=None,
+    color_map=None,
+    reindex=True,
+    figure_title="Levels over Selected Period",
+    fig_height=800,
+    title="Comparison of Levels",
+    auto_label_map=True,
+    auto_colour_map=True,
+    colour_start="cyan",
+    colour_end="purple",
+    close_hour=15,
+    close_minute=50,
+):
+    resolved_colour_map = colour_map if colour_map is not None else color_map
+
+    cfg = LevelAppConfig(
+        cols_of_interest=cols_of_interest,
+        reindex=reindex,
+        label_map=label_map,
+        colour_map=resolved_colour_map,
+        auto_label_map=auto_label_map,
+        auto_colour_map=auto_colour_map,
+        colour_start=colour_start,
+        colour_end=colour_end,
+        title=title,
+        figure_title=figure_title,
+        fig_height=fig_height,
+        close_hour=close_hour,
+        close_minute=close_minute,
+    )
+    cfg = _normalize_config(cfg)
+    _validate_inputs(df, cfg)
+    return _build_level_figure(df, cfg)
