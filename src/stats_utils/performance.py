@@ -37,7 +37,7 @@ class PerformanceSummary:
         """
         # stop if returns argument is invalid
         if kind not in ("simple", "log"):
-            raise ValueError("kind must be 'simple' or 'log3'")
+            raise ValueError("kind must be 'simple' or 'log'")
         
         self.df = df # dataframe input
         self.x = None  # prepared dataframe (filled in _prepare_returns)
@@ -191,6 +191,8 @@ class PerformanceSummary:
         """
         Compute performance summary statistics by calling on the above functions
         """
+        # Expected input shape: one row per timestamp, with a `time` column and
+        # one or more return columns listed in self.ret_cols.
         # prepare returns DataFrame by calling _prepare_returns
         # which sets up the time index and selects return columns
         self.R = self._prepare_returns()
@@ -340,6 +342,9 @@ class PerformanceCompare:
         """
         Transform the summary DataFrame into a format suitable for comparison.
         """
+        # Assumes summary_df columns follow the naming pattern produced by
+        # PerformanceSummary.run(), e.g. "My Strategy Period Return",
+        # "My Strategy Period Return Sharpe", etc.
         # first, trasform the summary_df into a long format for easier manipulation
         df_long = self.summary_df.melt(
             id_vars=["Period", "Start Date", "End Date"],
@@ -462,6 +467,8 @@ class PerformanceCompare:
         # now,  for each of the metrics and periods specified in self.rank_by and self.rank_periods,
         # create a column where the highest ranked strategy is at the top, followed by the column 
         # used to rank that strategy, also in top to bottom rank order
+        # Output format is side-by-side ranking tables (one table per
+        # metric/period pair) concatenated horizontally.
         for metric in self.rank_by:
             for period in self.rank_periods:
                 col = (period, metric)

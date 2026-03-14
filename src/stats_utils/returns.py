@@ -42,6 +42,7 @@ class ReturnsConfig:
     return_kind: ReturnKind = "log"
     inplace: bool = False # control whether to modify input df or return a copy
     start_index: int = 1
+    df: Optional[pd.DataFrame] = None
 
 
 class ReturnsCalculator:
@@ -109,6 +110,8 @@ class ReturnsCalculator:
         """
         Return array of same length with first element NaN and the rest returns.
         """
+        # Initialize output with NaN for the first row, since returns are undefined
+        # for the first observation
         out = np.full(values.shape[0], np.nan, dtype=float)
 
         # Avoid division by zero / invalid values quietly exploding
@@ -143,13 +146,21 @@ class ReturnsCalculator:
 
     def transform(
         self,
-        df: pd.DataFrame,
+        df: Optional[pd.DataFrame] = None,
         *,
         cols: Optional[Sequence[str]] = None,
     ) -> pd.DataFrame:
         """
         Add period and total return columns for each selected level column.
+
+        If `df` is not provided, this method uses `self.cfg.df`.
         """
+        # Default to dataframe stored in config unless caller provides one.
+        if df is None:
+            if self.cfg.df is None:
+                raise ValueError("No DataFrame provided. Pass `df` or set `ReturnsConfig(df=...)`.")
+            df = self.cfg.df
+
         level_cols = self.select_level_cols(df, cols=cols)
         self._validate(df, level_cols)
 
@@ -167,3 +178,5 @@ class ReturnsCalculator:
             out[total_col] = total
 
         return out
+
+

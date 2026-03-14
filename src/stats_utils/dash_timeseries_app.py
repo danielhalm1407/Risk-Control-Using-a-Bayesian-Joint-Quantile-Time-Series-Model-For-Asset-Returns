@@ -18,7 +18,7 @@ import plotly.graph_objects as go
 
 import matplotlib.colors as mcolors
 import numpy as np
-from typing import Mapping, Sequence, Optional
+from typing import Mapping, Sequence, Optional, Any
 
 
 
@@ -69,6 +69,23 @@ class LevelAppConfig:
     port: int = 8050
     close_hour: int = 15
     close_minute: int = 50
+
+    # plotting switches
+    show_legend: bool = True
+    x_tick_label_mode: str = "full"  # supported: full, year_month
+    x_tick_label_format: Optional[str] = None  # optional explicit strftime format
+
+
+def _format_time_label(ts, cfg: LevelAppConfig) -> str:
+    """Format datetime labels for axis ticks and slider marks."""
+    if cfg.x_tick_label_format:
+        return ts.strftime(cfg.x_tick_label_format)
+
+    if cfg.x_tick_label_mode == "year_month":
+        return ts.strftime("%Y-%m")
+
+    # default "full"
+    return ts.strftime("%y-%m-%d %H:%M")
 
 class AutoLabelMap:
     """
@@ -254,12 +271,13 @@ def _build_level_figure(df, cfg: LevelAppConfig, time_range=None):
         title=cfg.figure_title,
         xaxis_title="Time",
         yaxis_title=y_axis_title_value,
+        showlegend=cfg.show_legend,
         hovermode="x unified",
         height=cfg.fig_height,
         xaxis=dict(
             tickmode="array",
             tickvals=[filtered_df.index[i] for i in tick_positions],
-            ticktext=[filtered_df["time"].iloc[i].strftime("%y-%m-%d %H:%M") for i in tick_positions],
+            ticktext=[_format_time_label(filtered_df["time"].iloc[i], cfg) for i in tick_positions],
             tickangle=-90,
         ),
     )
@@ -281,7 +299,7 @@ class LevelDashApp:
         self._validate_inputs()
 
         # These get filled when you build the app
-        self.app: Optional[Dash] = None
+        self.app: Optional[Any] = None
 
 
     def _validate_inputs(self) -> None:
@@ -302,7 +320,7 @@ class LevelDashApp:
         if missing:
             raise ValueError(f"These cols_of_interest are missing from df: {missing}")
 
-    def build(self) -> Dash:
+    def build(self) -> Any:
         """Create the Dash app, attach layout + callbacks, return the Dash app."""
         if Dash is None:
             raise ImportError("dash is required to build the app. Install it to use LevelDashApp.")
@@ -325,7 +343,7 @@ class LevelDashApp:
                     max=len(df) - 1,
                     marks={
                         int(pos): {
-                            "label": df["time"].iloc[pos].strftime("%y-%m-%d %H:%M"),
+                            "label": _format_time_label(df["time"].iloc[pos], cfg),
                             "style": {
                                 "transform": "rotate(-90deg)",
                                 "transformOrigin": "top left",
@@ -394,6 +412,9 @@ def make_level_figure(
     colour_end="purple",
     close_hour=15,
     close_minute=50,
+    show_legend=True,
+    x_tick_label_mode="full",
+    x_tick_label_format=None,
 ):
     resolved_colour_map = colour_map if colour_map is not None else color_map
 
@@ -411,6 +432,9 @@ def make_level_figure(
         fig_height=fig_height,
         close_hour=close_hour,
         close_minute=close_minute,
+        show_legend=show_legend,
+        x_tick_label_mode=x_tick_label_mode,
+        x_tick_label_format=x_tick_label_format,
     )
     cfg = _normalize_config(cfg)
     _validate_inputs(df, cfg)
