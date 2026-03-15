@@ -2,7 +2,8 @@
 
 
 # Import modules needed for the py file to work
-from ast import List
+from typing import Any, Dict, List, Optional
+import re
 import numpy as np
 import pandas as pd
 
@@ -16,14 +17,29 @@ class PerformanceSummary:
         summary = ps.run()
     """
 
+    DEFAULT_STRESS_WINDOWS = [
+        {"period": "1973-74 Oil Shock", "start": "1973-10-01", "end": "1974-12-31"},
+        {"period": "1987 Black Monday Crash", "start": "1987-10-01", "end": "1987-11-30"},
+        {"period": "Dot-Com Bust", "start": "2000-03-01", "end": "2002-10-31"},
+        {"period": "2008 GFC", "start": "2007-10-01", "end": "2009-03-31"},
+        {"period": "2020 COVID Crash", "start": "2020-02-19", "end": "2020-03-23"},
+        {"period": "2021-22 Rate Hikes", "start": "2021-11-01", "end": "2022-12-31"},
+        {"period": "2025 Liberation Day Shock", "start": "2025-04-02", "end": "2025-04-30"},
+    ]
+
     def __init__(
         self,
         df: pd.DataFrame,
         ret_cols,
         kind: str = "simple",
         annualise: List = ["resampled","windows"], # which returns to annualise
-        resample_freq: str = "YE", # controls frequency of the resampled periods
+        resample_freq: Any = "YE", # controls frequency of the resampled periods; can be str or list of str
         periods_per_year: float = 252.0, # default 252 for interday data,
+        include_stress_windows: bool = False,
+        custom_windows: Optional[List] = None,
+        rolling_lookback_years: Optional[List[int]] = None,
+        rolling_anchor_freq: str = "YE",
+        align_end_dates: bool = True,
         *, 
         # the * makes the following arguments keyword-only, 
         # which means they must be specified by name
@@ -46,13 +62,164 @@ class PerformanceSummary:
         self.ret_cols = ret_cols if isinstance(ret_cols, list) else [ret_cols]
         self.kind = kind
         self.annualise = annualise
-        self.resample_freq = resample_freq
+        self.resample_freqs = self._normalise_resample_freqs(resample_freq)
+        self._resample_specs = [
+            {
+                "input": f,
+                "resample_rule": self._to_resample_rule(f),
+                "period_rule": self._to_period_rule(f),
+            }
+            for f in self.resample_freqs
+        ]
+
+        # Keep backward compatibility for code paths that expect single-frequency attributes.
+        self.resample_freq = self.resample_freqs[0]
+        self._resample_rule = self._resample_specs[0]["resample_rule"]
+        self._period_rule = self._resample_specs[0]["period_rule"]
         self.periods_per_year = periods_per_year
+        self.include_stress_windows = include_stress_windows
+        self.custom_windows = custom_windows or []
+        # length of windows to use in rolling lookbacks
+        self.rolling_lookback_years = sorted(
+            {int(w) for w in (rolling_lookback_years or []) if int(w) > 0}
+        )
+        # frequency for rolling lookback anchors (e.g., "YE" for year-end, "QE" for quarter-end)    
+        # this is done to see if long term performance would have looked the same in the past
+        self.rolling_anchor_freq = str(rolling_anchor_freq).strip().upper()
+        self._rolling_anchor_rule = self._to_resample_rule(self.rolling_anchor_freq)
+        self.align_end_dates = align_end_dates
         self.include_vol = include_vol
         self.include_drawdown = include_drawdown
+        self.common_end = None
         
         # filled during run()
         self.summary = None
+
+
+
+    @staticmethod
+    def _split_freq_multiplier(freq: str) -> tuple[int, str]:
+        """Split frequencies like '5YE' into (5, 'YE')."""
+        m = re.match(r"^(\d+)([A-Z].*)$", freq)
+        if m:
+            return int(m.group(1)), m.group(2)
+        return 1, freq
+
+    @staticmethod
+    def _to_resample_rule(freq: str) -> str:
+        """Map user aliases to pandas resample-safe offsets."""
+        mult, base = PerformanceSummary._split_freq_multiplier(freq)
+
+        def with_mult(token: str) -> str:
+            return f"{mult}{token}" if mult != 1 else token
+
+        if base == "Q":
+            return with_mult("QE")
+        if base.startswith("Q-"):
+            return with_mult(f"QE-{base.split('-', 1)[1]}")
+        if base in ("Y", "A"):
+            return with_mult("YE")
+        if base.startswith("Y-") or base.startswith("A-"):
+            return with_mult(f"YE-{base.split('-', 1)[1]}")
+        if base == "QE" or base.startswith("QE-"):
+            return with_mult(base)
+        if base == "YE" or base.startswith("YE-"):
+            return with_mult(base)
+        return freq
+
+    @staticmethod
+    def _to_period_rule(freq: str) -> str:
+        """Map resample aliases to period-safe frequency strings."""
+        mult, base = PerformanceSummary._split_freq_multiplier(freq)
+
+        def with_mult(token: str) -> str:
+            return f"{mult}{token}" if mult != 1 else token
+
+        if base == "QE":
+            return with_mult("Q")
+        if base.startswith("QE-"):
+            return with_mult(f"Q-{base.split('-', 1)[1]}")
+        if base == "YE":
+            return with_mult("Y")
+        if base.startswith("YE-"):
+            return with_mult(f"Y-{base.split('-', 1)[1]}")
+        if base == "Q" or base.startswith("Q-"):
+            return with_mult(base)
+        if base == "Y" or base.startswith("Y-"):
+            return with_mult(base)
+        if base == "A":
+            return with_mult("Y")
+        if base.startswith("A-"):
+            return with_mult(f"Y-{base.split('-', 1)[1]}")
+        return freq
+
+    @staticmethod
+    def _normalise_resample_freqs(resample_freq: Any) -> List[str]:
+        """Normalize a frequency input into an ordered unique list of uppercase strings."""
+        if isinstance(resample_freq, str):
+            raw = [resample_freq]
+        elif isinstance(resample_freq, (list, tuple, set)):
+            raw = list(resample_freq)
+        else:
+            raise ValueError("resample_freq must be a string or a list/tuple/set of strings")
+
+        normalised = []
+        seen = set()
+        for f in raw:
+            ff = str(f).strip().upper()
+            if not ff:
+                continue
+            if ff not in seen:
+                seen.add(ff)
+                normalised.append(ff)
+
+        if not normalised:
+            raise ValueError("At least one non-empty resample frequency must be provided")
+
+        return normalised
+
+    def _is_quarterly_freq(self, period_rule: Optional[str] = None) -> bool:
+        rule = self._period_rule if period_rule is None else period_rule
+        return rule.startswith("Q")
+
+    @staticmethod
+    def _normalise_window_item(item: Any) -> Optional[Dict[str, pd.Timestamp]]:
+        """Normalise one user-provided window spec into a dict."""
+        if isinstance(item, dict):
+            if not {"period", "start", "end"}.issubset(item.keys()):
+                raise ValueError("custom_windows dict items must contain 'period', 'start', and 'end'")
+            label = str(item["period"])
+            start = pd.to_datetime(item["start"])
+            end = pd.to_datetime(item["end"])
+        elif isinstance(item, (list, tuple)) and len(item) == 3:
+            label = str(item[0])
+            start = pd.to_datetime(item[1])
+            end = pd.to_datetime(item[2])
+        else:
+            raise ValueError("custom_windows items must be dicts or 3-tuples: (label, start, end)")
+
+        if pd.isna(start) or pd.isna(end):
+            return None
+        if end < start:
+            raise ValueError(f"custom window '{label}' has end < start")
+        return {"period": label, "start": start, "end": end}
+
+    def _collect_window_specs(self) -> List[Dict[str, pd.Timestamp]]:
+        """Build final list of stress/custom windows to evaluate."""
+        specs = []
+        # add stressed windows
+        if self.include_stress_windows:
+            specs.extend(self.DEFAULT_STRESS_WINDOWS)
+
+        # then add custom windows
+        specs.extend(self.custom_windows)
+
+        normalised = []
+        for item in specs:
+            spec = self._normalise_window_item(item)
+            if spec is not None:
+                normalised.append(spec)
+        return normalised
 
     def _prepare_returns(self) -> pd.DataFrame:
         """
@@ -66,7 +233,27 @@ class PerformanceSummary:
         self.x = self.x.sort_values("time").set_index("time")
         # return only the return columns as float type,
         # now indexed by time thanks to the above code
-        return self.x[self.ret_cols].astype(float)
+        R = self.x[self.ret_cols].astype(float)
+
+        if self.align_end_dates:
+            # Use the earliest column-specific last-valid timestamp as a common endpoint.
+            # This prevents comparing "Last N Years" where some strategies include newer data.
+            last_valid = R.apply(pd.Series.last_valid_index)
+            if last_valid.isna().any():
+                missing = list(last_valid[last_valid.isna()].index)
+                raise ValueError(
+                    f"No non-null observations for return columns: {missing}"
+                )
+
+            self.common_end = min(last_valid.tolist())
+            R = R.loc[:self.common_end]
+        else:
+            self.common_end = R.index.max()
+
+        if R.empty:
+            raise ValueError("No data available after end-date alignment")
+
+        return R
 
     def _total_return(self, frame: pd.DataFrame, annualise: bool = False) -> pd.Series:
         """Calculate total return  over the given DataFrame frame."""
@@ -83,7 +270,7 @@ class PerformanceSummary:
         else:
             return total_return
 
-    def _total_return_resampled(self, resampler, annualise: bool = False) -> pd.DataFrame:
+    def _total_return_resampled(self, resampler, annualise: bool = False, period_rule: Optional[str] = None) -> pd.DataFrame:
         """
         Compute total returns for each resample bin, returning a DataFrame
         indexed by bin end timestamps, columns=strategies.
@@ -104,10 +291,11 @@ class PerformanceSummary:
 
         # Convert each bin label into a Period (e.g., "2024Q1"), then get the start timestamp
         # of that period. This gives a vector of start dates, one per row/bin.
-        start = tr.index.to_period(self.resample_freq).start_time
+        p_rule = self._period_rule if period_rule is None else period_rule
+        start = tr.index.to_period(p_rule).start_time
 
         # Same idea: get the end timestamp of each period/bin, one per row/bin.
-        end = tr.index.to_period(self.resample_freq).end_time
+        end = tr.index.to_period(p_rule).end_time
 
         # Compute elapsed time per bin in years.
         # (end - start) is a TimedeltaIndex; .days gives integer day counts per row/bin.
@@ -187,6 +375,154 @@ class PerformanceSummary:
             row.update({f"{c}_max_drawdown": float(mdd[c]) for c in self.ret_cols})
         return row
 
+    def _build_resampled_df_for_spec(self, spec: Dict[str, str]) -> pd.DataFrame:
+        """Build period-resampled section for a single frequency spec."""
+        annualised_value = "resampled" in self.annualise
+        # this gives us a DataFrame indexed by the resample bin end timestamps, with one column per strategy,
+        # containing the total return for that strategy during that resample bin (e.g., quarter), annualised if requested
+        resampled = self._total_return_resampled(
+            self.R.resample(spec["resample_rule"]),
+            annualise=annualised_value,
+            period_rule=spec["period_rule"],
+        )
+
+        # derive period labels from the index *before* reset_index so we have a true
+        # PeriodIndex (supports .start_time / .end_time), mirroring _total_return_resampled
+        period_idx = resampled.index.to_period(spec["period_rule"])
+
+        # now we need to add a "period" column that labels each row/bin with the corresponding quarter or year,
+        out = resampled.reset_index()
+        # convert the time index into a period label (e.g., "2024Q1" or "2024"), and store in a new "period" column
+        if self._is_quarterly_freq(spec["period_rule"]):
+            out["period"] = period_idx.astype(str)
+        elif spec["period_rule"].startswith("Y"):
+            out["period"] = out["time"].dt.year.astype(str)
+        else:
+            out["period"] = period_idx.astype(str)
+
+        # also add explicit start_date and end_date columns for each resampled period,
+        # which we can use later to calculate extra stats like volatility and drawdown over the same period
+        out["start_date"] = period_idx.start_time.date.astype(str)
+        out["end_date"] = period_idx.end_time.date.astype(str)
+
+        # if the user has requested extra stats, we need to loop through each row/bin and calculate those
+        # stats over the original returns DataFrame self.R for the corresponding time window
+        if self.include_vol or self.include_drawdown:
+            out_rows = out.to_dict(orient="records")
+            out_rows_new = []
+            for row in out_rows:
+                frame = self.R.loc[row["start_date"]:row["end_date"]]
+                if frame.empty:
+                    continue
+                row = self._add_extra_stats(row, frame, pre_annualised=annualised_value)
+                out_rows_new.append(row)
+            out = pd.DataFrame(out_rows_new)
+
+        if out.empty:
+            return out
+
+        out = out.sort_values("period", ascending=False)
+        return out.drop(columns=["time"])
+
+    def _build_resampled_df(self) -> pd.DataFrame:
+        """Build and combine resampled sections across all requested frequencies."""
+        parts = []
+        for spec in self._resample_specs:
+            part = self._build_resampled_df_for_spec(spec)
+            if not part.empty:
+                parts.append(part)
+
+        if not parts:
+            return pd.DataFrame()
+
+        out = pd.concat(parts, ignore_index=True)
+        if "end_date" in out.columns:
+            out = out.sort_values(["end_date", "period"], ascending=[False, False])
+        return out
+
+    def _build_window_row(
+        self,
+        period_label: str,
+        start: pd.Timestamp,
+        end: pd.Timestamp,
+        *,
+        annualise_key: str,
+    ) -> Optional[dict]:
+        """Build one row for any explicit date window, skipping empty overlap windows."""
+        annualised_value = annualise_key in self.annualise
+        frame = self.R.loc[start:end]
+        if frame.empty:
+            return None
+
+        stats = self._total_return(frame, annualise=annualised_value)
+        row = {
+            "period": period_label,
+            "start_date": str(frame.index.min().date()),
+            "end_date": str(frame.index.max().date()),
+            **stats.to_dict(),
+        }
+        return self._add_extra_stats(row, frame, pre_annualised=annualised_value)
+
+    def _build_ytd_df(self) -> pd.DataFrame:
+        """Build YTD section as a one-row DataFrame."""
+        last_date = self.R.index.max()
+        start = pd.Timestamp(f"{last_date.year}-01-01")
+        row = self._build_window_row("YTD", start, last_date, annualise_key="YTD")
+        return pd.DataFrame([row]) if row is not None else pd.DataFrame()
+
+    def _build_rolling_windows_df(self) -> pd.DataFrame:
+        """Build standard rolling multi-year windows section."""
+        last_date = self.R.index.max()
+        rows = []
+        for window in (1, 3, 5, 10):
+            start = max(last_date - pd.DateOffset(years=window), self.R.index.min())
+            row = self._build_window_row(
+                f"Last {window} Years",
+                start,
+                last_date,
+                annualise_key="windows",
+            )
+            if row is not None:
+                rows.append(row)
+        return pd.DataFrame(rows)
+
+    def _build_rolling_lookback_history_df(self) -> pd.DataFrame:
+        """Build rolling lookback snapshots (e.g., 5Y as-of each anchor date)."""
+        if not self.rolling_lookback_years:
+            return pd.DataFrame()
+
+        anchor_dates = self.R.resample(self._rolling_anchor_rule).last().index
+        rows = []
+
+        for lookback in self.rolling_lookback_years:
+            for anchor in anchor_dates[::-1]:
+                start = max(anchor - pd.DateOffset(years=lookback), self.R.index.min())
+                label = f"Rolling {lookback}Y As Of {anchor.date()}"
+                row = self._build_window_row(
+                    label,
+                    start,
+                    anchor,
+                    annualise_key="rolling_lookbacks",
+                )
+                if row is not None:
+                    rows.append(row)
+
+        return pd.DataFrame(rows)
+
+    def _build_stress_windows_df(self) -> pd.DataFrame:
+        """Build predefined/custom stress window rows."""
+        rows = []
+        for spec in self._collect_window_specs():
+            row = self._build_window_row(
+                spec["period"],
+                spec["start"],
+                spec["end"],
+                annualise_key="stress_windows",
+            )
+            if row is not None:
+                rows.append(row)
+        return pd.DataFrame(rows)
+
     def run(self) -> pd.DataFrame:
         """
         Compute performance summary statistics by calling on the above functions
@@ -197,125 +533,117 @@ class PerformanceSummary:
         # which sets up the time index and selects return columns
         self.R = self._prepare_returns()
 
-        # 1) resample period (usually yearly) totals
-            # usually resamples by year end, since .resample("Y") uses Dec 31 
-            # as year end by default and groups rows into calendar year buckets
-        # check whether to annualise the resampled returns
-        annualised_value = "resampled" in self.annualise
-        resampled = self._total_return_resampled(
-            self.R.resample(self.resample_freq),
-            annualise=("resampled" in self.annualise),
-        )
-
-        # build output DataFrame
-        out = resampled.reset_index()
-        # add a label for the resampling period: 
-        #   (if yearly, take the year)
-        #   (if quarterly, take year-Qn etc.)
-        if "Q" in self.resample_freq:
-            out["period"] = out["time"].dt.to_period("Q").astype(str)
-        else:
-            out["period"] = out["time"].dt.year.astype(str) # add a label for the period
-        
-        # add start and end dates for the window
-        out["start_date"] = out["time"].dt.year.astype(str) + "-01-01"
-        out["end_date"]   = out["time"].dt.year.astype(str) + "-12-31"
-
-        # add extra stats if requested: but iterative so slower
-        if self.include_vol or self.include_drawdown:
-            # convert the out dataframe into list of dicts, one per year
-            out_rows = out.to_dict(orient="records")
-            out_rows_new = []
-            for row in out_rows:
-                # set the frame to be the slice of R corresponding to this year
-                frame = self.R.loc[row["start_date"]:row["end_date"]]
-                row = self._add_extra_stats(row, frame, pre_annualised=annualised_value)
-                out_rows_new.append(row)
-
-            extra_df = pd.DataFrame(out_rows_new)
-            # replace original out dataframe
-            out = extra_df
-
-
-
-        # sort in descending order of year
-        out = out.sort_values("period", ascending=False)
-        out = out.drop(columns=["time"]) # drop the time column as no longer needed
-
-        # 2) YTD
-        last_date = self.R.index.max()
-        # set the frame to be from Jan 1 of last year to last date
-        frame = self.R.loc[f"{last_date.year}-01-01":last_date]
-
-        # check whether to annualise YTD
-        annualised_value = "YTD" in self.annualise
-        
-        # calculate returns, pre-annualised if chosen
-        ytd = self._total_return(frame, annualise=annualised_value)      
-
-
-        ytd_row = {
-            "period": "YTD",
-            "start_date": f"{last_date.year}-01-01",
-            "end_date": str(last_date.date()),
-            # the ** operator unpacks the series into a dict, because it detects that 
-            # the indices of the series (returns series we were comparing against) 
-            # correspond to the keys expected in the dict
-            **ytd.to_dict() 
-        }
-
-        # add extra stats if requested
-        ytd_row = self._add_extra_stats(ytd_row, frame, pre_annualised=annualised_value)
-        ytd_df = pd.DataFrame([ytd_row])
-
-        # 3) rolling multi-year windows
-        window_rows = []
-        for window in (1, 3, 5, 10):
-            # compute start date for the rolling window to be the last date for which
-            # we have data, minus the window length
-            start = last_date - pd.DateOffset(years=window)
-            # make sure the start date is not before the first date in the data
-            start = max(start, self.R.index.min())
-
-            # compute stats for the slice of the dataframe corresponding to this window
-            frame = self.R.loc[start:last_date]
-
-            # check whether to annualise windows
-            annualised_value = "windows" in self.annualise
-
-            # calculate returns, annualised if chosen
-            stats = self._total_return(frame, annualise=annualised_value)
-
-            row = {
-                "period": f"Last {window} Years",
-                "start_date": str(start.date()),
-                "end_date": str(last_date.date()),
-                # the ** operator unpacks the series into a dict, because it detects that 
-                # the indices of the series (returns series we were comparing against) 
-                # correspond to the keys expected in the dict
-                **stats.to_dict() 
-            }
-
-            # add extra stats if requested
-            row = self._add_extra_stats(row, frame, pre_annualised=annualised_value)
-
-            # append the row to the list of window rows
-            window_rows.append(row)
-
-        windows_df = pd.DataFrame(window_rows)
-
-        summary = pd.concat([ytd_df, windows_df, out], ignore_index=True)
+        # build each section independently to keep run() small and testable
+        sections = [
+            self._build_ytd_df(),
+            self._build_rolling_windows_df(),
+            self._build_rolling_lookback_history_df(),
+            self._build_stress_windows_df(),
+            self._build_resampled_df(),
+        ]
+        sections = [s for s in sections if not s.empty]
+        summary = pd.concat(sections, ignore_index=True) if sections else pd.DataFrame()
 
         # formatting
         # ensure the numeric cols are stored as floats but rounded to 4 decimal places
-        for c in [col for col in summary.columns if col not in ["period", "start_date", "end_date"]]:
-            summary[c] = summary[c].astype(float).round(4)
+        if not summary.empty:
+            for c in [col for col in summary.columns if col not in ["period", "start_date", "end_date"]]:
+                summary[c] = summary[c].astype(float).round(4)
 
-        # format the summary columns neatly in title format without underscores
-        summary.columns = [c.replace("_", " ").title() for c in summary.columns]
+            # format the summary columns neatly in title format without underscores
+            summary.columns = [c.replace("_", " ").title() for c in summary.columns]
 
         self.summary = summary
         return summary
+
+    def save_to_excel(self, filepath: str) -> None:
+        """
+        Write self.summary to an Excel workbook with one sheet per metric.
+
+        Sheet layout
+        ------------
+        Each sheet contains:  Period | Start Date | End Date | <strategy 1> | <strategy 2> | ...
+        The best-performing strategy in every row is written in bold.
+
+        Metric → bold direction
+        -----------------------
+        Period Return   : higher is better
+        Volatility      : lower is better
+        Sharpe          : higher is better; row is skipped if the best value is negative
+        Max Drawdown    : higher is better (least negative = smallest drawdown)
+
+        File-A / File-B workflow
+        ------------------------
+        Keep this file as "file A" (plain data, always overwritten).
+        Create "file B" separately, connecting to file A via Excel's
+        Data → Get Data → From Workbook (Power Query).  File B can then hold colour
+        scales and any formatting you want without ever being overwritten by this code.
+        """
+        if self.summary is None:
+            raise RuntimeError("Call run() before save_to_excel()")
+
+        summary = self.summary
+        id_cols = [c for c in summary.columns if c in ("Period", "Start Date", "End Date")]
+        data_cols = [c for c in summary.columns if c not in id_cols]
+
+        # Group data columns by metric suffix, preserving insertion order
+        metric_groups: dict = {}
+        for col in data_cols:
+            col_lower = col.lower()
+            if col_lower.endswith(" volatility"):
+                # if the column name ends with " volatility", we consider it a volatility metric 
+                # and group it under "Volatility". the setdefault is just a way to initialise the
+                # list if the key "Volatility" is not already in the dict, and then we append 
+                # the column name to that list
+                metric_groups.setdefault("Volatility", []).append(col)
+            elif col_lower.endswith(" sharpe"):
+                metric_groups.setdefault("Sharpe", []).append(col)
+            elif col_lower.endswith(" max drawdown"):
+                metric_groups.setdefault("Max Drawdown", []).append(col)
+            else:
+                metric_groups.setdefault("Period Return", []).append(col)
+
+        with pd.ExcelWriter(filepath, engine="xlsxwriter") as writer:
+            workbook = writer.book
+            bold = workbook.add_format({"bold": True})
+
+            for metric, strat_cols in metric_groups.items():
+                sheet_df = summary[id_cols + strat_cols].copy()
+                sheet_name = metric[:31]  # Excel tab name limit is 31 chars
+                sheet_df.to_excel(writer, sheet_name=sheet_name, index=False)
+                worksheet = writer.sheets[sheet_name]
+
+                metric_lower = metric.lower()
+                if "volatility" in metric_lower:
+                    direction = "lower"
+                elif "sharpe" in metric_lower:
+                    direction = "sharpe"
+                else:
+                    direction = "higher"  # Period Return and Max Drawdown
+
+                n_id = len(id_cols)
+
+                for row_idx in range(len(sheet_df)):
+                    values = [sheet_df.iloc[row_idx][c] for c in strat_cols]
+                    numeric = [(i, v) for i, v in enumerate(values) if pd.notna(v)]
+                    if not numeric:
+                        continue
+
+                    if direction == "lower":
+                        best_i, best_val = min(numeric, key=lambda x: x[1])
+                    elif direction == "sharpe":
+                        positive = [(i, v) for i, v in numeric if v >= 0]
+                        if not positive:
+                            continue
+                        best_i, best_val = max(positive, key=lambda x: x[1])
+                    else:
+                        best_i, best_val = max(numeric, key=lambda x: x[1])
+
+                    # row_idx + 1 shifts past the header row in the Excel sheet
+                    worksheet.write(row_idx + 1, n_id + best_i, best_val, bold)
+
+
+
 
 
 class PerformanceCompare:
@@ -499,3 +827,82 @@ class PerformanceCompare:
 
 
         return rankings_df
+
+
+class ReturnsToLevels:
+    """
+    Convert return series into level indices that all start at 100.
+
+    The common start date is defined as the latest first-valid timestamp across
+    all selected return columns, so every output series begins together.
+    """
+
+    def __init__(
+        self,
+        df: pd.DataFrame,
+        ret_cols,
+        kind: str = "simple",
+        *,
+        time_col: str = "time",
+        keep_time_col: bool = True,
+        align_common_calendar: bool = True,
+    ):
+        if kind not in ("simple", "log"):
+            raise ValueError("kind must be 'simple' or 'log'")
+
+        self.df = df
+        self.ret_cols = ret_cols if isinstance(ret_cols, list) else [ret_cols]
+        self.kind = kind
+        self.time_col = time_col
+        self.keep_time_col = keep_time_col
+        self.align_common_calendar = align_common_calendar
+
+        self.common_start = None
+        self.levels = None
+
+    def _prepare_returns(self) -> pd.DataFrame:
+        """Prepare return matrix indexed by time and sorted chronologically."""
+        x = self.df.copy()
+        x[self.time_col] = pd.to_datetime(x[self.time_col])
+        x = x.sort_values(self.time_col).set_index(self.time_col)
+        R = x[self.ret_cols].astype(float)
+
+        first_valid = R.apply(pd.Series.first_valid_index)
+        if first_valid.isna().any():
+            missing = list(first_valid[first_valid.isna()].index)
+            raise ValueError(
+                f"No non-null observations for return columns: {missing}"
+            )
+
+        common_start = max(first_valid.tolist())
+        R = R.loc[common_start:]
+
+        if self.align_common_calendar:
+            R = R.dropna(how="any")
+
+        if R.empty:
+            raise ValueError("No overlapping observations after applying common start alignment")
+
+        self.common_start = common_start
+        return R
+
+    def run(self) -> pd.DataFrame:
+        """
+        Return level-indexed series starting at 100 at the common start date.
+        """
+        R = self._prepare_returns()
+
+        if self.kind == "log":
+            gross = np.exp(R.cumsum())
+        else:
+            gross = (1 + R).cumprod()
+
+        levels = 100.0 * gross.div(gross.iloc[0])
+
+        if self.keep_time_col:
+            out = levels.reset_index().rename(columns={levels.index.name: self.time_col})
+        else:
+            out = levels
+
+        self.levels = out
+        return out
